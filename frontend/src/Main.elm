@@ -1,13 +1,14 @@
 module Main exposing (..)
 
-import Browser
+import Browser exposing (UrlRequest)
 import Browser.Navigation as Nav
 import Html exposing (Html, div, text)
 import Html.Attributes exposing (style)
+import Page.Login as Login
 import Page.Starred as Starred
+import Route as Route exposing (Route, parseUrl)
 import Skeleton
-import Url
-import Url.Parser as Parser exposing ((</>), Parser, oneOf, top)
+import Url exposing (Url)
 
 
 
@@ -30,26 +31,59 @@ main =
 
 
 type alias Model =
-    { key : Nav.Key
+    { route : Route
     , page : Page
+    , navKey : Nav.Key
     }
 
 
 type Page
-    = NotFound
-    | Starred Starred.Model
+    = NotFoundPage
+    | LoginPage Login.Model
+    | StarredPage Starred.Model
 
 
 
 -- INIT
 
 
-init : () -> Url.Url -> Nav.Key -> ( Model, Cmd Msg )
-init _ url key =
-    stepUrl url
-        { key = key
-        , page = NotFound
-        }
+init : () -> Url -> Nav.Key -> ( Model, Cmd Msg )
+init _ url navKey =
+    let
+        model =
+            { route = parseUrl url
+            , page = NotFoundPage
+            , navKey = navKey
+            }
+    in
+    initCurrentPage ( model, Cmd.none )
+
+
+initCurrentPage : ( Model, Cmd Msg ) -> ( Model, Cmd Msg )
+initCurrentPage ( model, existingCmds ) =
+    let
+        ( currentPage, mappedPageCmds ) =
+            case model.route of
+                Route.NotFound ->
+                    ( NotFoundPage, Cmd.none )
+
+                Route.Starred ->
+                    let
+                        ( pageModel, pageCmds ) =
+                            Starred.init
+                    in
+                    ( StarredPage pageModel, Cmd.map StarredPageMsg pageCmds )
+
+                Route.Login ->
+                    let
+                        ( pageModel, pageCmds ) =
+                            Login.init
+                    in
+                    ( LoginPage pageModel, Cmd.map LoginPageMsg pageCmds )
+    in
+    ( { model | page = currentPage }
+    , Cmd.batch [ existingCmds, mappedPageCmds ]
+    )
 
 
 
@@ -59,15 +93,18 @@ init _ url key =
 view : Model -> Browser.Document Msg
 view model =
     case model.page of
-        NotFound ->
+        NotFoundPage ->
             Skeleton.view never
                 { title = "Not Found"
                 , attrs = []
                 , kids = notFound
                 }
 
-        Starred starred ->
-            Skeleton.view StarredMsg (Starred.view starred)
+        StarredPage pageModel ->
+            Skeleton.view StarredPageMsg (Starred.view pageModel)
+
+        LoginPage pageModel ->
+            Skeleton.view LoginPageMsg (Login.view pageModel)
 
 
 
@@ -86,46 +123,57 @@ notFound =
 
 
 type Msg
-    = NoOp
-    | LinkClicked Browser.UrlRequest
+    = StarredPageMsg Starred.Msg
+    | LoginPageMsg Login.Msg
     | UrlChanged Url.Url
-    | StarredMsg Starred.Msg
+    | LinkClicked UrlRequest
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
-update message model =
-    case message of
-        NoOp ->
-            ( model, Cmd.none )
+update msg model =
+    case ( msg, model.page ) of
+        ( UrlChanged url, _ ) ->
+            let
+                newRoute =
+                    parseUrl url
+            in
+            ( { model | route = newRoute }, Cmd.none )
+                |> initCurrentPage
 
-        LinkClicked urlRequest ->
+        ( LinkClicked urlRequest, _ ) ->
             case urlRequest of
                 Browser.Internal url ->
-                    ( model
-                    , Nav.pushUrl model.key (Url.toString url)
-                    )
+                    ( model, Nav.pushUrl model.navKey (Url.toString url) )
 
-                Browser.External href ->
-                    ( model
-                    , Nav.load href
-                    )
+                Browser.External url ->
+                    ( model, Nav.load url )
 
-        UrlChanged url ->
-            stepUrl url model
+        ( StarredPageMsg subMsg, StarredPage pageModel ) ->
+            let
+                ( updatePageModel, updateCmd ) =
+                    Starred.update subMsg pageModel
+            in
+            ( { model | page = StarredPage updatePageModel }
+            , Cmd.map StarredPageMsg updateCmd
+            )
 
-        StarredMsg msg ->
-            case model.page of
-                Starred starred ->
-                    stepStarred model (Starred.update msg starred)
+        ( LoginPageMsg subMsg, LoginPage pageModel ) ->
+            let
+                ( updatePageModel, updateCmd ) =
+                    Login.update subMsg pageModel
+            in
+            ( { model | page = LoginPage updatePageModel }
+            , Cmd.map LoginPageMsg updateCmd
+            )
 
-                _ ->
-                    ( model, Cmd.none )
+        ( _, _ ) ->
+            ( model, Cmd.none )
 
 
-stepStarred : Model -> ( Starred.Model, Cmd Starred.Msg ) -> ( Model, Cmd Msg )
-stepStarred model ( starred, cmds ) =
-    ( { model | page = Starred starred }
-    , Cmd.map StarredMsg cmds
+updateWith : (subModel -> Model) -> (subMsg -> Msg) -> Model -> ( subModel, Cmd subMsg ) -> ( Model, Cmd Msg )
+updateWith toModel toMsg model ( subModel, subCmd ) =
+    ( toModel subModel
+    , Cmd.map toMsg subCmd
     )
 
 
@@ -136,31 +184,3 @@ stepStarred model ( starred, cmds ) =
 subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.none
-
-
-
--- ROUTER
-
-
-stepUrl : Url.Url -> Model -> ( Model, Cmd Msg )
-stepUrl url model =
-    let
-        parser =
-            oneOf
-                [ route top
-                    (stepStarred model Starred.init)
-                ]
-    in
-    case Parser.parse parser url of
-        Just answer ->
-            answer
-
-        Nothing ->
-            ( { model | page = NotFound }
-            , Cmd.none
-            )
-
-
-route : Parser a b -> a -> Parser (b -> c) c
-route parser handler =
-    Parser.map handler parser

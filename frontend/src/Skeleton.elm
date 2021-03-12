@@ -6,6 +6,7 @@ module Skeleton exposing
 import Browser
 import Html exposing (..)
 import Html.Attributes exposing (..)
+import Util.Css as Css
 
 
 
@@ -29,6 +30,6 @@ view toMsg details =
         details.title
     , body =
         [ Html.map toMsg <|
-            div (class "center" :: style "flex" "1" :: details.attrs) details.kids
+            div (class (Css.decode [ Css.flex, Css.h100 ]) :: details.attrs) details.kids
         ]
     }

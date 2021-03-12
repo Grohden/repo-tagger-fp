@@ -1,4 +1,4 @@
-module Page.Starred exposing
+module Page.Login exposing
     ( Model
     , Msg
     , init
@@ -7,14 +7,14 @@ module Page.Starred exposing
     )
 
 import Backend.Api exposing (SimpleRepository, loadTaggerItems)
-import Html exposing (Html, a, div, h3, img, li, p, span, text, ul)
-import Html.Attributes exposing (class, href, src, style)
+import Html exposing (Html, div, h3, img, li, p, span, text, ul)
+import Html.Attributes exposing (class, src, style)
 import Http
 import Maybe
 import Skeleton
 import Util.Assets as Assets
 import Util.Css as Css
-import Util.Widgets.Container as Container
+import Util.Widgets.Container as Container exposing (MainAxisAlignment(..))
 import Util.Widgets.Text as Text
 
 
@@ -23,9 +23,7 @@ import Util.Widgets.Text as Text
 
 
 type Model
-    = Failure Http.Error
-    | LoadingStarred
-    | Success (List SimpleRepository)
+    = Initial
 
 
 
@@ -34,7 +32,7 @@ type Model
 
 init : ( Model, Cmd Msg )
 init =
-    ( LoadingStarred, loadTaggerItems GotRepositoryList )
+    ( Initial, Cmd.none )
 
 
 
@@ -42,19 +40,12 @@ init =
 
 
 type Msg
-    = GotRepositoryList (Result Http.Error (List SimpleRepository))
+    = RedirectToOAuth
 
 
 update : Msg -> Model -> ( Model, Cmd msg )
 update msg model =
-    case msg of
-        GotRepositoryList result ->
-            case result of
-                Ok list ->
-                    ( Success list, Cmd.none )
-
-                Err err ->
-                    ( Failure err, Cmd.none )
+    ( model, Cmd.none )
 
 
 
@@ -63,21 +54,24 @@ update msg model =
 
 view : Model -> Skeleton.Details Msg
 view model =
-    { title = "Starred list"
+    { title = "Login"
     , attrs = []
     , kids =
         [ case model of
-            Failure error ->
-                centeredFullContainer [] [ errorView error ]
-
-            LoadingStarred ->
-                centeredLoader "Loading.."
-
-            Success list ->
-                div [ class "d-flex flex-items-baseline flex-justify-around" ]
-                    [ listGroup (List.map toRepositoryListView list) ]
+            Initial ->
+                Container.column
+                    |> Container.withSize "100%" "100%"
+                    |> Container.withCrossAlignment Center
+                    |> Container.withMainAlignment Center
+                    |> Container.builtDiv [ loginButton ]
         ]
     }
+
+
+loginButton =
+    Container.defaults
+        |> Container.withClasses "btn"
+        |> Container.builtButton [ Text.h3 "Login" ]
 
 
 centeredLoader : String -> Html msg
@@ -105,7 +99,7 @@ toRepositoryListView repo =
     li [ class "col-12 d-flex width-full py-4 border-bottom public fork" ]
         [ div [ class "col-10 col-lg-9 d-inline-block" ]
             [ div [ class "d-inline-block mb-1" ]
-                [ h3 [ class "wb-break-all" ] [ buildRepoLink repo ] ]
+                [ h3 [ class "wb-break-all" ] [ text repo.name ] ]
             , case repo.description of
                 Just description ->
                     div []
@@ -117,14 +111,6 @@ toRepositoryListView repo =
                     div [] [ text "Repo list empty, TODO" ]
             ]
         ]
-
-
-buildRepoLink repo =
-    let
-        link =
-            [ "https://github.com", repo.ownerName, repo.name ] |> String.join "/"
-    in
-    a [ href link ] [ text repo.name ]
 
 
 

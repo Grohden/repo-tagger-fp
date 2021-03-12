@@ -1,4 +1,4 @@
-module Risky exposing (get)
+module Util.Risky exposing (get)
 
 import Http
 
